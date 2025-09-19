@@ -32,6 +32,20 @@ struct Args{
     /// verbose output.
     #[arg(short, long, default_value = "false")]
     verbose: bool,
+
+    /// force using Malmuth-Harville ICM method
+    #[arg(long, conflicts_with = "sicm")]
+    icm: bool,
+
+    /// force using Tysen's SICM method
+    #[arg(long, conflicts_with = "icm")]
+    sicm: bool,
+}
+
+/// Calculation method selector
+enum Method {
+    Icm,
+    Sicm,
 }
 
 fn main() {
@@ -72,25 +86,56 @@ fn main() {
         println!("payout: {:?}",payout);
     }
 
-    //Tysen's SICM method
-    let now = time::Instant::now();
-    payout.sort();
-    sicm(&stack, &payout, &mut payout_expected, args.count, args.x, args.thread);
-    
-    if args.verbose {
-        println!("\npayout_expected: {:?}", payout_expected);
-        println!("SICM method. done with {:?} msec.", now.elapsed().as_millis());
+    // Select calculation method
+    // - If --icm is set, use ICM
+    // - If --sicm is set, use SICM
+    // - Otherwise (default): ICM for <= 9 players, SICM for > 9 players
+    let method = if args.icm {
+        Method::Icm
+    } else if args.sicm {
+        Method::Sicm
+    } else if stack.len() <= 9 {
+        Method::Icm
+    } else {
+        Method::Sicm
+    };
 
-        if args.x {
-            println!("rng: smallrng");
-        }else {
-            println!("rng: thread_rng");
+    match method {
+        Method::Sicm => {
+            // Tysen's SICM method (Monte Carlo). Sort payouts ascending for rank mapping.
+            let now = time::Instant::now();
+            let mut payout_sicm = payout.clone();
+            payout_sicm.sort();
+            sicm(&stack, &payout_sicm, &mut payout_expected, args.count, args.x, args.thread);
+
+            if args.verbose {
+                println!("\npayout_expected: {:?}", payout_expected);
+                println!("SICM method. done with {:?} msec.", now.elapsed().as_millis());
+
+                if args.x {
+                    println!("rng: smallrng");
+                } else {
+                    println!("rng: thread_rng");
+                }
+
+                println!("Thread: {:?}", args.thread);
+            } else {
+                println!("{:?}", payout_expected);
+            }
         }
+        Method::Icm => {
+            // Malmuth-Harville ICM method (exact). Payouts are sorted inside icm() (descending).
+            let now = time::Instant::now();
+            let mut payout_icm = payout.clone();
+            icm(&stack, &mut payout_icm, &mut payout_expected);
 
-        println!("Thread: {:?}", args.thread);
-
-    }else {
-        println!("{:?}", payout_expected);
+            if args.verbose {
+                println!("\npayout_expected: {:?}", payout_expected);
+                println!("ICM method. done with {:?} msec.", now.elapsed().as_millis());
+            } else {
+                println!("{:?}", payout_expected);
+            }
+        }
     }
 
     return;
